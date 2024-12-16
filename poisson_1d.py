@@ -1,8 +1,10 @@
 """
-Solves Poisson's equation in one dimension using the Finite Element Method
-i.e. -u'' = f(x).
+Solves Poisson's equation in one dimension
+i.e. -u'' = f(x)
+using the Finite Element Method, with direct linear solution.
 This is readily solved analytically for most simple functions f and is only implemented as an exercise.
-Detects high gradients in the solution and applies adaptive mesh refinement accordingly.
+Applies mesh refinement to elements with the highest errors (probabilistically, assuming a normal error distribution),
+which saves time for very large meshes.
 """
 import numpy as np
 import time
@@ -147,38 +149,54 @@ def make_hat_functions(mesh1d):
     hats.append(Hat(mesh1d[-1], mesh1d[-1] - mesh1d[-2], 0))
     return hats # Length n + 1 for consistency
 
-def solve_poissons_1d_dirchlet_simple(mesh1d, func):
+def solve_poissons_1d_robin(mesh1d, func, bcs):
     '''
-    Imposes boundary conditions of u(a) = u(b) = 0
+    Imposes Robin boundary conditions with the list bcs = [k0, g0, k1, g1]
+    u'(x0) = k0(u(x0) - g0)
+    u'(xn) = k1(u(xn) - g1)
     '''
     n = len(mesh1d) - 1
+    k0, g0, k1, g1 = bcs
     hatfuncs = make_hat_functions(mesh1d)
-    hatfuncs[0] = Hat(mesh1d[0], 0, 0) # Trial function satisfies v(a) = 0
-    hatfuncs[-1] = Hat(mesh1d[-1], 0, 0) # Trial function satisfies v(b) = 0
 
-    # Assemble n-1 x n-1 stiffness matrix A
+    # Assemble n+1 x n+1 stiffness matrix A
     A = []
-    for i in range(1, n):
-        vec = [0 for _ in range(n - 1)]
-        vec[i - 1] = (1 / (mesh1d[i] - mesh1d[i - 1]) + 1 / (mesh1d[i + 1] - mesh1d[i]))
-        if i != n - 1:
-            vec[i] = -1 / (mesh1d[i + 1] - mesh1d[i])
-        if i != 1:
-            vec[i - 2] = -1 / (mesh1d[i] - mesh1d[i - 1])
+    for i in range(0, n+1):
+        vec = [0 for _ in range(n + 1)]
+        if i == 0:
+            vec[0] = 1 / (mesh1d[1] - mesh1d[0])
+            vec[1] = -1 / (mesh1d[1] - mesh1d[0])
+        elif i == n:
+            vec[n] = 1 / (mesh1d[n] - mesh1d[n - 1])
+            vec[n - 1] = -1 / (mesh1d[n] - mesh1d[n - 1])
+        else:
+            vec[i] = 1 / (mesh1d[i] - mesh1d[i - 1]) + 1 / (mesh1d[i + 1] - mesh1d[i])
+            vec[i - 1] = -1 / (mesh1d[i] - mesh1d[i - 1])
+            vec[i + 1] = -1 / (mesh1d[i + 1] - mesh1d[i])
         A.append(vec)
-    # Assemble n-1 vector b
+
+    # Add on 'residual matrix' R
+    A[0][0] += k0
+    A[n][n] += k1
+        
+    # Assemble n+1 vector b
     b = []
-    for i in range(1, n):
+    for i in range(0, n+1):
         item = 0
         # First half - Simpson's rule
-        item += ((mesh1d[i] - mesh1d[i - 1]) / 6) * (2 * func((mesh1d[i] + mesh1d[i - 1]) / 2) + func(mesh1d[i]))
+        if i != 0:
+            item += ((mesh1d[i] - mesh1d[i - 1]) / 6) * (2 * func((mesh1d[i] + mesh1d[i - 1]) / 2) + func(mesh1d[i]))
         # Second half
-        item += ((mesh1d[i + 1] - mesh1d[i]) / 6) * (func(mesh1d[i]) + 2 * func((mesh1d[i + 1] + mesh1d[i]) / 2))
+        if i != n:
+            item += ((mesh1d[i + 1] - mesh1d[i]) / 6) * (func(mesh1d[i]) + 2 * func((mesh1d[i + 1] + mesh1d[i]) / 2))
         b.append(item)
+
+    # Add on 'residual vector' r
+    b[0] += k0 * g0
+    b[n] += k1 * g1
 
     # Solve for the coefficients
     X = np.linalg.solve(A, b)
-    X = [0] + list(X) + [0]
     return CompositeHat(hatfuncs, X, mesh1d, func)
 
 def refine_mesh(old_solution, mesh1d, threshold=0.2, visits=1):
@@ -218,31 +236,37 @@ def refine_mesh(old_solution, mesh1d, threshold=0.2, visits=1):
 
 
 if __name__ == "__main__":
-    # Example: f(x) = sin(5x), a = -2, b = 3, uniform mesh with step size = 0.5
-    start = time.time()
+    # Example: f(x) = sin(5x), x0 = 0, xn = 5, uniform mesh with step size = 0.5
+    # BCs: u(x0) = 0, u'(xn) = 0 -> k0 large, k1 = 0, g0 = 0, g1 = arbitrary (=1)
     runs = 10
     step = 0.5
-    a = -2
-    b = 3
-    mesh1d = np.arange(a, b + step, step)
+    x0 = 0
+    xn = 5
+    mesh1d = np.arange(x0, xn + step, step)
     func = lambda x: np.sin(5 * x)
-    A = (np.sin(10) + np.sin(15)) / 125
-    B = 2 * A - np.sin(10) / 25
+    A = np.cos(25) / 5
+    B = 0
     actual = lambda x: np.sin(5 * x) / 25 - A * x - B
-    X = np.arange(a, b + step/10, step/10) # Higher quality plot
+    X = np.arange(x0, xn + step/10, step/10) # Higher quality plot
     Y_actual = [actual(_) for _ in X]
+    bcs = [10 ** 10, 0, 0, 1]
     for q in range(runs):
-        res = solve_poissons_1d_dirchlet_simple(mesh1d, func)
-        print(time.time() - start)
+        start = time.time()
+        res = solve_poissons_1d_robin(mesh1d, func, bcs)
+        print("Linear solution completed in", time.time() - start, "seconds")
         Y = [res(_) for _ in X]
         plt.plot(X, Y)
-        start = time.time()
         plt.plot(X, Y_actual)
         plt.legend(["Approximate solution", "Actual solution"])
-        print(time.time() - start)
-        plt.scatter(mesh1d, np.zeros(len(mesh1d)))
+
+        # Optional: show mesh points
+        # plt.scatter(mesh1d, np.zeros(len(mesh1d)))
+        
         plt.show()
         if q != runs - 1:
+            start = time.time()
+            # For large meshes, reduce visits (optionally, reduce threshold).
             mesh1d = refine_mesh(res, mesh1d, threshold=0.15, visits=3)
+            print("Mesh refined in", time.time() - start, "seconds")
             plt.clf()
         
