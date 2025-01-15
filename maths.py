@@ -1,13 +1,93 @@
 import random
+import math
+import numpy as np
+from functools import reduce
+
+# General floating point tolerace (note np.isclose has tolerance 10^-5)
+tol = 10 ** -8
+
+class Point:
+
+    def __init__(self, *args, id=None):
+        '''
+        Handles n-dimensional points.
+        '''
+        self.id = id
+        if type(args[0]) == list:
+            args = args[0]
+        self.X = args[0]
+        self.x = args[0] # in case of case issues :)
+        try:
+            self.Y = args[1]
+            self.y = args[1]
+        except:
+            pass
+        try:
+            self.Z = args[2]
+            self.z = args[2]
+        except:
+            pass
+        self.coords = list(args)
+
+    def setid(self, id):
+        self.id = id
+
+    def distance(self, p2):
+        assert len(p2.coords) == len(self.coords)
+        return sum([(self.coords[i] - p2.coords[i]) ** 2 for i in range(len(self.coords))]) ** (1/2)
+    
+    def __str__(self):
+        if self.id is None:
+            return repr(self.coords)
+        else:
+            return repr(self.coords) + f" ID: {self.id}"
+    
+    def __repr__(self):
+        return repr(self.coords)
+    
+    def __eq__(self, p2):
+        for i in range(len(self.coords)):
+            if not math.isclose(self.coords[i], p2.coords[i]):
+                return False
+        return True
+    
+    def __add__(self, p2):
+        assert type(p2) == Point
+        assert len(p2.coords) == len(self.coords)
+        return Point([self.coords[i] + p2.coords[i] for i in range(len(self.coords))])
+    __radd__ = __add__
+    
+    def __sub__(self, p2):
+        assert type(p2) == Point
+        assert len(p2.coords) == len(self.coords)
+        return Point([self.coords[i] - p2.coords[i] for i in range(len(self.coords))])
+    __rsub__ = __sub__
+
+    def __hash__(self):
+        return int((10 ** 20) * self.x) + int((10 ** 10) * self.y)
+
+def distance(p1: Point, p2: Point):
+    assert len(p2.coords) == len(p1.coords)
+    return sum([(p1.coords[i] - p2.coords[i]) ** 2 for i in range(len(p1.coords))]) ** (1/2)
+
+class Line:
+
+    def __init__(self, p1, p2):
+        self.p1 = p1
+        self.p2 = p2
+
+        self.length = distance(p1, p2)
 
 
 class Gen1DPoly:
 
-    # Generic 1D polynominal.
-    # Form: a_0 + a_1 * x + a_2 * x^2 + ...
-    # Inputs:
-    # coeffs - coefficients, None by default, array of floats if overriden
-    # empty - None by default, zero polynominal of degree empty if overriden
+    """
+    Generic 1D polynominal.
+    Form: a_0 + a_1 * x + a_2 * x^2 + ...
+    Inputs:
+    coeffs - coefficients, None by default, array of floats if overriden
+    empty - None by default, zero polynominal of degree empty if overriden
+    """
 
     def __init__(self, coeffs = None, empty = None):
         if coeffs != None:
@@ -215,3 +295,9 @@ class VectorFieldPoly2D:
 #quad22d = Gen2DPoly([[2],[4,5],[-2,-9,-12]])
 
 #vec2d = VectorFieldPoly2D(quad2d, quad22d)
+
+# Testing zone
+if __name__ == "__main__":
+    p = Point(1, 2)
+    pp = Point(3, 4)
+    print(p + pp)

@@ -15,6 +15,9 @@ from scipy import stats
 
 from maths import *
 
+# Floating point error fudge factor
+ff = 10 ** -10
+
 def retconstfunc(const):
     return lambda x: const
 
@@ -31,7 +34,7 @@ class PiecewiseFunction:
             if c == len(self.seps) - 1:
                 if x == interval:
                     return funcleft(x)
-            if x < interval:
+            if x < interval + ff:
                 return funcleft(x)
             c += 1
         return funcright(x)
@@ -80,19 +83,19 @@ class CompositeHat:
         self.func = func
 
     def __call__(self, x):
-        if x > self.mesh1d[-1]:
+        if x > self.mesh1d[-1] + ff:
             return 0
-        if x < self.mesh1d[0]:
+        if x < self.mesh1d[0] - ff:
             return 0
-        for i in range(len(self.mesh1d) + 1):
+        for i in range(len(self.mesh1d)):
             if i == 0:
-                if self.mesh1d[i] <= x <= self.mesh1d[i + 1]:
+                if self.mesh1d[i] - ff < x < self.mesh1d[i + 1] + ff:
                     return self.coeffs[i] * self.hatfuncs[i](x) + self.coeffs[i + 1] * self.hatfuncs[i + 1](x) 
-            elif i == len(self.mesh1d):
-                if self.mesh1d[i - 1] <= x <= self.mesh1d[i]:    
+            elif i == len(self.mesh1d) - 1:
+                if self.mesh1d[i - 1] - ff < x < self.mesh1d[i] + ff:    
                     return self.coeffs[i - 1] * self.hatfuncs[i - 1](x) + self.coeffs[i] * self.hatfuncs[i](x)
             else:
-                if self.mesh1d[i - 1] <= x <= self.mesh1d[i + 1]:    
+                if self.mesh1d[i - 1] - ff < x < self.mesh1d[i + 1] + ff:    
                     return self.coeffs[i - 1] * self.hatfuncs[i - 1](x) + self.coeffs[i] * self.hatfuncs[i](x) + self.coeffs[i + 1] * self.hatfuncs[i + 1](x)
 
     
@@ -194,6 +197,9 @@ def solve_poissons_1d_robin(mesh1d, func, bcs):
     # Add on 'residual vector' r
     b[0] += k0 * g0
     b[n] += k1 * g1
+    print(b)
+    print("UHi")
+    print()
 
     # Solve for the coefficients
     X = np.linalg.solve(A, b)
@@ -236,20 +242,21 @@ def refine_mesh(old_solution, mesh1d, threshold=0.2, visits=1):
 
 
 if __name__ == "__main__":
-    # Example: f(x) = sin(5x), x0 = 0, xn = 5, uniform mesh with step size = 0.5
+    # Example: f(x) = |x|, x0 = -2, xn = 2, uniform mesh with step size = 0.25
     # BCs: u(x0) = 0, u'(xn) = 0 -> k0 large, k1 = 0, g0 = 0, g1 = arbitrary (=1)
-    runs = 10
-    step = 0.5
-    x0 = 0
-    xn = 5
-    mesh1d = np.arange(x0, xn + step, step)
-    func = lambda x: np.sin(5 * x)
-    A = np.cos(25) / 5
-    B = 0
-    actual = lambda x: np.sin(5 * x) / 25 - A * x - B
-    X = np.arange(x0, xn + step/10, step/10) # Higher quality plot
+    runs = 5
+    step = 1
+    x0 = -2
+    xn = 2
+    mesh1d = np.arange(x0, xn + step / 2, step)
+    print(mesh1d)
+    func = lambda x: 0
+    A = -2
+    B = -16 / 3
+    actual = lambda x: (x ** 2) * abs(x) / -6 - A*x - B
+    X = np.arange(x0, xn + step/20, step/10) # Higher quality plot
     Y_actual = [actual(_) for _ in X]
-    bcs = [10 ** 10, 0, 0, 1]
+    bcs = [10 ** 8, 4, 1, 1]
     for q in range(runs):
         start = time.time()
         res = solve_poissons_1d_robin(mesh1d, func, bcs)
@@ -268,5 +275,6 @@ if __name__ == "__main__":
             # For large meshes, reduce visits (optionally, reduce threshold).
             mesh1d = refine_mesh(res, mesh1d, threshold=0.15, visits=3)
             print("Mesh refined in", time.time() - start, "seconds")
+            print(mesh1d)
             plt.clf()
         
