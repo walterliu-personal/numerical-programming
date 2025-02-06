@@ -5,8 +5,19 @@ Contains helpful classes for finite element calculations to be used in specific 
 import math
 import numpy as np
 from pyqtree import Index
+import matplotlib.pyplot as plt
 
 from maths import *
+
+# Orientations - normal pointing outward from the longest edge of a 45-90-45 triangular element.
+SW = 0
+NW = 1
+NE = 2
+SE = 3
+
+# Element type
+TYPE45 = 0
+TYPE30 = 1 # 30-60-30 triangle
 
 
 def point_in_triangle(p, p0, p1, p2):
@@ -19,6 +30,15 @@ def point_in_triangle(p, p0, p1, p2):
         return False
     d = (p2.X - p1.X) * (p.Y - p1.Y) - (p2.Y - p1.Y) * (p.X - p1.X)
     return (d == 0) or (d < 0) == (s + t <= 0)
+
+class Node(Point):
+
+    def __init__(self, *args, id=None):
+        Point.__init__(self, *args, id=id)
+        self.elements = set() # All elements this node is a part of.
+
+    def addelement(self, element):
+        self.elements.add(element)
 
 class Edge(Line):
 
@@ -51,10 +71,11 @@ class Triangle2D:
 
         # Derived quantities.
         self.area = 0.5 * abs(p0.X * (p1.Y - p2.Y) + p1.X * (p2.Y - p0.Y) + p2.X * (p0.Y - p1.Y))
+        self.centroid = Point(Fraction(1, 3) * (self.p0.x + self.p1.x + self.p2.x), Fraction(1, 3) * (self.p0.y + self.p1.y + self.p2.y))
         # Note convention.
-        self.l01 = distance(p0, p1)
-        self.l12 = distance(p1, p2)
-        self.l20 = distance(p2, p0)
+        self.l01 = Line(p0, p1)
+        self.l12 = Line(p1, p2)
+        self.l20 = Line(p2, p0)
 
     def contains(self, point):
         return point_in_triangle(point, self.p0, self.p1, self.p2)
@@ -77,12 +98,35 @@ class TriangularElement2D(Triangle2D):
     """
     Generic 2D triangle element. Points should be ordered counterclockwise.
     """
-    def __init__(self, p0, p1, p2):
+    def __init__(self, p0, p1, p2, id=None, orientation=None, refinement_level=0, parent=None, element_type=TYPE45):
         Triangle2D.__init__(self, p0, p1, p2)
         # Basis functions.
         self.phi0 = TriangleBasis2D(p0, p1, p2)
         self.phi1 = TriangleBasis2D(p1, p2, p0)
         self.phi2 = TriangleBasis2D(p2, p0, p1)
+        self.id = id
+        self.children = []
+        self.element_type = element_type
+        self.refinement_level = refinement_level
+        self.max_refinement_level = refinement_level
+        self.orientation = orientation
+        self.parent = parent
+        
+        # Overriden from Triangle2D.
+        self.l01 = Edge(p0, p1)
+        self.l12 = Edge(p1, p2)
+        self.l20 = Edge(p2, p0)
+
+    def set_max_refinement_level(self, level):
+        self.max_refinement_level = max(self.max_refinement_level, level)
+
+    def setid(self, id):
+        self.id = id
+
+    def add_children(self, children):
+        self.children.append(children)
+        self.set_max_refinement_level(children.max_refinement_level)
+
 
 
 class TriangleBasis2D:
@@ -166,6 +210,23 @@ class FEMSolution2D:
 
                 # Since the final function should be continuous, no need to take averages on element borders.
                 return element.phi0(x, y) * self.coefficients[element.p0.id] + element.phi1(x, y) * self.coefficients[element.p1.id] + element.phi2(x, y) * self.coefficients[element.p2.id]
+
+    def plot_velocity_and_pressure(self, inlet_speed=10):
+        # For Euler flow only: plots v = -grad(ϕ) and p = -(grad(ϕ) • grad(ϕ)) using element centroidal values.
+        x, y, u, v, p = [], [], [], [], []
+        for element in self.elements:
+            x.append((1/3) * (element.p0.x + element.p1.x + element.p2.x))
+            y.append((1/3) * (element.p0.y + element.p1.y + element.p2.y))
+            u.append(-(element.phi0.b * self.coefficients[element.p0.id] + element.phi1.b * self.coefficients[element.p1.id] + element.phi2.b * self.coefficients[element.p2.id]))
+            v.append(-(element.phi0.c * self.coefficients[element.p0.id] + element.phi1.c * self.coefficients[element.p1.id] + element.phi2.c * self.coefficients[element.p2.id]))
+        u = np.array(u)
+        v = np.array(v)
+        p = -(u ** 2 + v ** 2) / 2
+        pressure = plt.tricontourf(x, y, p, 25)
+        plt.colorbar(pressure)
+        plt.quiver(x, y, u, v, scale=inlet_speed * 2, units="xy", width=0.015, alpha=0.5)
+        plt.show()
+
                 
         
 

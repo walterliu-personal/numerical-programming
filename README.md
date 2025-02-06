@@ -5,6 +5,7 @@
 
 
 15/01/25 - Implemented a 2D Laplace's equation solver with a self-programmed mesher. Solution verified with solving potential flow around a cylinder.
+![alt text](https://github.com/walterliu-personal/numerical-programming/tree/master/images/euler_2d.png)
 
 
 References:

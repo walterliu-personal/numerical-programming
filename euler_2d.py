@@ -29,7 +29,7 @@ from mesher import *
 
 class PotentialFlowSolver2D:
 
-    def __init__(self, bbox, wallfunc, V_in, resolution=5, tolerance=maths.tol):
+    def __init__(self, bbox, wallfunc, V_in, poisson_func=lambda x, y: 0, resolution=5, tolerance=maths.tol):
         # The following BCs are used:
         # Inlet: -n • grad(ϕ) = V_in
         # Opening: ϕ = 0
@@ -38,13 +38,17 @@ class PotentialFlowSolver2D:
         # and a no-slip wall is applied to the object with boundaries defined by wallfunc.
 
         # Generate initial mesh
+        print("Starting meshing...\n")
         self.mesh2D = FluidMesh2D(bbox, wallfunc, resolution)
         self.V_in = V_in
         self.bbox = bbox
         self.tolerance = tolerance
+        self.poisson_func = poisson_func
 
 
     def solve(self):
+        # Optional to add the "driving function" f = -div(grad(ϕ)), for other applications.
+        print("Solving...\n")
         start = time.time()
         # Form (n+1) x (n+1) stiffness matrix, A
         A = [[0 for j in range(self.mesh2D.num_nodes)] for i in range(self.mesh2D.num_nodes)]
@@ -70,6 +74,14 @@ class PotentialFlowSolver2D:
                 R[edge.p2.id][edge.p2.id] += round((edge.length / 6) * (2/self.tolerance), -5)
         R = np.array(R)
 
+        # Form (n+1) load vector, b
+        b = [0 for i in range(self.mesh2D.num_nodes)]
+        for element in self.mesh2D.elements:
+            b[element.p0.id] += (element.area / 3) * self.poisson_func(element.p0.x, element.p0.y)
+            b[element.p1.id] += (element.area / 3) * self.poisson_func(element.p1.x, element.p1.y)
+            b[element.p2.id] += (element.area / 3) * self.poisson_func(element.p2.x, element.p2.y)
+        b = np.array(b)
+
         # Form (n+1) residual vector, r
         # Note vector b = int(f * v dK) = 0, since f = 0 (special case of Poissons')
         r = [0 for i in range(self.mesh2D.num_nodes)]
@@ -89,7 +101,9 @@ class PotentialFlowSolver2D:
             raise Warning("Stiffness matrix is not symmetric??")
 
         # Solve the linear system
-        self.coeffs = np.linalg.solve(A+R, r)
+        linstart = time.time()
+        self.coeffs = np.linalg.solve(A+R, b+r)
+        print(f"Linear solution completed in {time.time() - start} seconds.")
         self.solution = FEMSolution2D(self.mesh2D.points, self.mesh2D.elements, self.coeffs)
         
         x, y, z = [], [], []
@@ -110,8 +124,8 @@ class PotentialFlowSolver2D:
             except ZeroDivisionError:
                 if p.y > 0: theta = np.pi / 2
                 else: p.y = -np.pi / 2
-            real.append(-self.V_in * r * (1 + 4 / (r ** 2)) * np.cos(theta))
-        print("Linear solution completed in", time.time() - start, "seconds.")
+            real.append(-self.V_in * r * (1 + 16 / (r ** 2)) * np.cos(theta))
+        print("Solution completed in", time.time() - start, "seconds.")
         print("Velocity: ", self.V_in)
         fig, (ax1, ax2) = plt.subplots(2)
         c1 = ax1.tricontourf(x, y, [[e.p0.id, e.p1.id, e.p2.id] for e in self.mesh2D.elements], self.coeffs, 40)
@@ -127,12 +141,21 @@ class PotentialFlowSolver2D:
 
 # Testing area       
 if __name__ == "__main__":
-    def rectangle(x, y):
-        if (-3 < x < 3) and (-1 < y < 1):
+    def bus(x, y):
+        if (-4 < x < 4) and (-2 < y < 0.5 + np.sin(float(4 * x))):
             return False
         return True
     
     def cylinder(x, y):
-        return x ** 2 + y ** 2 >= 2
-    solution = PotentialFlowSolver2D((-10, -10, 10, 10), cylinder, 10, 80, 10 ** -8)
-    solution.solve()
+        return x ** 2 + y ** 2 >= 16
+
+    def source(x, y):
+        if x < -10 + tol:
+            return 1
+        return 0
+    
+    flow_speed = 10
+
+    solution = PotentialFlowSolver2D((-10, -10, 10, 10), cylinder, flow_speed, resolution=70)
+    result = solution.solve()
+    result.plot_velocity_and_pressure(flow_speed)

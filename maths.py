@@ -2,6 +2,7 @@ import random
 import math
 import numpy as np
 from functools import reduce
+from fractions import Fraction
 
 # General floating point tolerace (note np.isclose has tolerance 10^-5)
 tol = 10 ** -8
@@ -33,6 +34,7 @@ class Point:
         self.id = id
 
     def distance(self, p2):
+        assert issubclass(type(p2), Point)
         assert len(p2.coords) == len(self.coords)
         return sum([(self.coords[i] - p2.coords[i]) ** 2 for i in range(len(self.coords))]) ** (1/2)
     
@@ -46,19 +48,20 @@ class Point:
         return repr(self.coords)
     
     def __eq__(self, p2):
+        assert issubclass(type(p2), Point)
         for i in range(len(self.coords)):
             if not math.isclose(self.coords[i], p2.coords[i]):
                 return False
         return True
     
     def __add__(self, p2):
-        assert type(p2) == Point
+        assert issubclass(type(p2), Point)
         assert len(p2.coords) == len(self.coords)
         return Point([self.coords[i] + p2.coords[i] for i in range(len(self.coords))])
     __radd__ = __add__
     
     def __sub__(self, p2):
-        assert type(p2) == Point
+        assert issubclass(type(p2), Point)
         assert len(p2.coords) == len(self.coords)
         return Point([self.coords[i] - p2.coords[i] for i in range(len(self.coords))])
     __rsub__ = __sub__
@@ -66,9 +69,17 @@ class Point:
     def __hash__(self):
         return int((10 ** 20) * self.x) + int((10 ** 10) * self.y)
 
-def distance(p1: Point, p2: Point):
+def distance(p1, p2):
+    assert issubclass(type(p1), Point)
+    assert issubclass(type(p2), Point)
     assert len(p2.coords) == len(p1.coords)
     return sum([(p1.coords[i] - p2.coords[i]) ** 2 for i in range(len(p1.coords))]) ** (1/2)
+
+def mid(p1, p2):
+    assert issubclass(type(p1), Point)
+    assert issubclass(type(p2), Point)
+    assert len(p2.coords) == len(p1.coords)
+    return Point([Fraction(1, 2) * (p1.coords[i] + p2.coords[i]) for i in range(len(p1.coords))])
 
 class Line:
 
